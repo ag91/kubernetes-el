@@ -17,7 +17,7 @@
   :group 'kubernetes
   :type 'integer)
 
-(defcustom kubernetes-list-chunk-size 100
+(defcustom kubernetes-list-chunk-size 5
   "Maximum number of items to fetch per page when listing resources.
 
 Used for incremental loading of large resource lists (e.g., deployments)."

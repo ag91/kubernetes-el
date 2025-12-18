@@ -203,20 +203,8 @@
              (funcall fallback))
             (:success
              nil))
-          ;; Safety net: if nothing updated within a short delay, use fallback.
-          (run-at-time 3 nil
-                       (lambda ()
-                         (let* ((cur (kubernetes-state--get (kubernetes-state) 'deployments))
-                                (items (append (alist-get 'items cur) nil)))
-                           (when (or (null cur) (null items))
-                             (funcall fallback))))))
-        ;; Safety net: if nothing updated within a short delay, use fallback.
-        (run-at-time 3 nil
-                     (lambda ()
-                       (let* ((cur (kubernetes-state--get (kubernetes-state) 'deployments))
-                              (items (append (alist-get 'items cur) nil)))
-                         (when (or (null cur) (null items))
-                           (funcall fallback))))))
+          )
+        )
       nil)))
 
 (defun kubernetes-deployments-refresh-now (&optional interactive)

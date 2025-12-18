@@ -154,6 +154,7 @@ CB receives the parsed JSON alist."
 ON-PAGE is called with each page JSON (alist) as it arrives.
 ON-COMPLETE is called with no args when listing finishes."
   (let ((continue-token nil))
+    (message "hey-- %s " (list chunk))
     (cl-labels
         ((next-page ()
            (let* ((ns (kubernetes-state--get state 'current-namespace))
@@ -172,7 +173,7 @@ ON-COMPLETE is called with no args when listing finishes."
               (lambda (json)
                 (condition-case err
                     (progn
-                      (setq continue-token (alist-get 'continue json))
+                      (setq continue-token (alist-get 'continue (alist-get 'metadata json)))
                       (kubernetes--info "deployments page received: items=%s cont=%s"
                                         (let ((items (append (alist-get 'items json) nil)))
                                           (if items (length items) 0))
@@ -184,8 +185,8 @@ ON-COMPLETE is called with no args when listing finishes."
                         (kubernetes--info "deployments on-complete")
                         (when (functionp on-complete)
                           (funcall on-complete))))
-                  (error (kubernetes--error "deployments page error: %S" err)))))))
-         (next-page)))))
+                  (error (kubernetes--error "deployments page error: %S" err))))))))
+      (next-page))))
 
 (defun kubernetes-kubectl-list-paged-replicasets (state chunk on-page on-complete)
   "List replicasets in pages of CHUNK size.
@@ -204,25 +205,26 @@ ON-COMPLETE is called with no args when listing finishes."
                                     100)
                                 (if continue-token
                                     (concat "&continue=" (url-hexify-string continue-token))
-                                  "")))))
-           (kubernetes--info "replicasets next-page: %s" path)
-           (kubernetes-kubectl--raw-json
-            state path
-            (lambda (json)
-              (condition-case err
-                  (progn
-                    (setq continue-token (alist-get 'continue json))
-                    (kubernetes--info "replicasets page received: items=%s cont=%s"
-                                      (let ((items (append (alist-get 'items json) nil)))
-                                        (if items (length items) 0))
-                                      (if (and continue-token (stringp continue-token) (not (string-empty-p continue-token))) "Y" "N"))
-                    (funcall on-page json)
-                    (if (and continue-token (stringp continue-token) (not (string-empty-p continue-token)))
-                        (next-page)
-                      (kubernetes--info "replicasets on-complete")
-                      (funcall on-complete)))
-                (error (kubernetes--error "replicasets page error: %S" err))))))
-         (next-page)))))
+                                  ""))))
+             (kubernetes--info "replicasets next-page: %s" path)
+             (kubernetes-kubectl--raw-json
+              state path
+              (lambda (json)
+                (condition-case err
+                    (progn
+                      (setq continue-token (alist-get 'continue (alist-get 'metadata json)))
+                      (kubernetes--info "replicasets page received: items=%s cont=%s"
+                                        (let ((items (append (alist-get 'items json) nil)))
+                                          (if items (length items) 0))
+                                        (if (and continue-token (stringp continue-token) (not (string-empty-p continue-token))) "Y" "N"))
+                      (funcall on-page json)
+                      (if (and continue-token (stringp continue-token) (not (string-empty-p continue-token)))
+                          (next-page)
+                        (kubernetes--info "replicasets on-complete")
+                        (funcall on-complete)))
+                  (error (kubernetes--error "replicasets page error: %S" err))))))
+           ))
+      (next-page))))
 
 (defun kubernetes-kubectl-list-paged-pods (state chunk on-page on-complete)
   "List pods in pages of CHUNK size.
@@ -241,25 +243,26 @@ ON-COMPLETE is called with no args when listing finishes."
                                     100)
                                 (if continue-token
                                     (concat "&continue=" (url-hexify-string continue-token))
-                                  "")))))
-           (kubernetes--info "pods next-page: %s" path)
-           (kubernetes-kubectl--raw-json
-            state path
-            (lambda (json)
-              (condition-case err
-                  (progn
-                    (setq continue-token (alist-get 'continue json))
-                    (kubernetes--info "pods page received: items=%s cont=%s"
-                                      (let ((items (append (alist-get 'items json) nil)))
-                                        (if items (length items) 0))
-                                      (if (and continue-token (stringp continue-token) (not (string-empty-p continue-token))) "Y" "N"))
-                    (funcall on-page json)
-                    (if (and continue-token (stringp continue-token) (not (string-empty-p continue-token)))
-                        (next-page)
-                      (kubernetes--info "pods on-complete")
-                      (funcall on-complete)))
-                (error (kubernetes--error "pods page error: %S" err))))))
-         (next-page)))))
+                                  ""))))
+             (kubernetes--info "pods next-page: %s" path)
+             (kubernetes-kubectl--raw-json
+              state path
+              (lambda (json)
+                (condition-case err
+                    (progn
+                      (setq continue-token (alist-get 'continue json))
+                      (kubernetes--info "pods page received: items=%s cont=%s"
+                                        (let ((items (append (alist-get 'items json) nil)))
+                                          (if items (length items) 0))
+                                        (if (and continue-token (stringp continue-token) (not (string-empty-p continue-token))) "Y" "N"))
+                      (funcall on-page json)
+                      (if (and continue-token (stringp continue-token) (not (string-empty-p continue-token)))
+                          (next-page)
+                        (kubernetes--info "pods on-complete")
+                        (funcall on-complete)))
+                  (error (kubernetes--error "pods page error: %S" err))))))
+           ))
+      (next-page))))
 
 (defun kubernetes-kubectl-delete (type name state cb &optional error-cb)
   "Delete resource of TYPE and NAME; execute CB with the response buffer.
