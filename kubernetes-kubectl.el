@@ -136,7 +136,7 @@ CB receives the parsed JSON alist."
                                       (json-read-from-string (buffer-string)))))
                           (when (listp json)
                             (let ((items (append (alist-get 'items json) nil))
-                                  (cont (alist-get 'continue json))
+                                  (cont (alist-get 'continue (alist-get 'metadata json)))
                                   (rem (alist-get 'remainingItemCount json)))
                               (kubernetes--info "kubectl --raw response: items=%s rem=%s cont=%s"
                                                 (if items (length items) 0)
@@ -147,6 +147,17 @@ CB receives the parsed JSON alist."
                       cleanup-cb
                       :flags '())
   cleanup-cb)
+
+(defun kubernetes-kubectl-rollout-restart-deployment (state name cb &optional error-cb)
+  "Run `kubectl rollout restart deployment NAME' and call CB with output.
+
+STATE is the current application state.  CB is called with the
+stdout buffer contents as a string.  ERROR-CB is invoked on failure."
+  (kubernetes-kubectl state
+                      (list "rollout" "restart" "deployment" name)
+                      (lambda (buf)
+                        (funcall cb (with-current-buffer buf (buffer-string))))
+                      error-cb))
 
 (defun kubernetes-kubectl-list-paged-deployments (state chunk on-page on-complete)
   "List deployments in pages of CHUNK size.
@@ -250,7 +261,7 @@ ON-COMPLETE is called with no args when listing finishes."
               (lambda (json)
                 (condition-case err
                     (progn
-                      (setq continue-token (alist-get 'continue json))
+                      (setq continue-token (alist-get 'continue (alist-get 'metadata json)))
                       (kubernetes--info "pods page received: items=%s cont=%s"
                                         (let ((items (append (alist-get 'items json) nil)))
                                           (if items (length items) 0))
@@ -308,6 +319,16 @@ CB is a function taking the name of the context that was switched to."
                           (string-match (rx bol "Switched to context \"" (group (+? nonl)) "\"." (* space) eol)
                                         (buffer-string))
                           (funcall cb (match-string 1 (buffer-string)))))))
+
+(defun kubernetes-kubectl-scale-deployment (state name replicas cb &optional error-cb)
+  "Run `kubectl scale deployment NAME --replicas=N' and call CB with output.
+
+STATE is the current application state.  REPLICAS is an integer."
+  (kubernetes-kubectl state
+                      (list "scale" "deployment" name "--replicas" (number-to-string replicas))
+                      (lambda (buf)
+                        (funcall cb (with-current-buffer buf (buffer-string))))
+                      error-cb))
 
 (defun kubernetes-kubectl-describe-pod (state pod-name cb)
   "Describe pod with POD-NAME, then execute CB with the string response.

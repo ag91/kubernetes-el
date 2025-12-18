@@ -7,6 +7,7 @@
 
 (require 'kubernetes-core)
 (require 'kubernetes-kubectl)
+(require 'kubernetes-pods)
 (require 'kubernetes-modes)
 (require 'kubernetes-state)
 (require 'kubernetes-utils)
@@ -210,6 +211,45 @@
 (defun kubernetes-deployments-refresh-now (&optional interactive)
   (interactive "p")
   (kubernetes-deployments-refresh interactive))
+
+;; Interactive actions
+;;;###autoload
+(defun kubernetes-deployments-rollout-restart (deployment-name state)
+  "Run rollout restart for a deployment.
+
+STATE is the current application state.
+
+DEPLOYMENT-NAME is the name of the deployment to restart."
+  (interactive (let ((state (kubernetes-state)))
+                 (list (kubernetes-deployments--read-name state) state)))
+  (kubernetes-kubectl-rollout-restart-deployment
+   state deployment-name
+   (lambda (output)
+     (kubernetes--info "rollout restart: %s" (string-trim output))
+     ;; After triggering a restart, refresh deployments and pods to reflect changes.
+     (kubernetes-deployments-refresh t)
+     (kubernetes-pods-refresh t)
+     (message "Restarted deployment %s" deployment-name))
+   (lambda (_err-buf)
+     ;; Fallback: scale to 0 then back to desired
+     (let* ((deployment (kubernetes-state-lookup-deployment deployment-name state))
+            (desired (or (alist-get 'replicas (alist-get 'spec deployment)) 1)))
+       (kubernetes--warn "rollout restart unsupported/failed; using scale fallback")
+       (kubernetes-kubectl-scale-deployment
+        state deployment-name 0
+        (lambda (_)
+          (kubernetes-kubectl-scale-deployment
+           state deployment-name desired
+           (lambda (_)
+             (kubernetes-deployments-refresh t)
+             (kubernetes-pods-refresh t)
+             (message "Restarted deployment %s via scale" deployment-name))
+           (lambda (eb2)
+             (kubernetes--error "scale back failed: %s" (with-current-buffer eb2 (string-trim (buffer-string))))
+             (user-error "Failed to scale deployment %s back to %d" deployment-name desired))))
+        (lambda (eb1)
+          (kubernetes--error "scale to 0 failed: %s" (with-current-buffer eb1 (string-trim (buffer-string))))
+          (user-error "Failed to restart deployment %s" deployment-name)))))))
 
 (defun kubernetes-deployments-delete-marked (state)
   (let ((names (kubernetes-state--get state 'marked-deployments)))

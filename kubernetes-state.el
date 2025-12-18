@@ -800,9 +800,10 @@ pod, secret, configmap, etc."
       (kubernetes-state-update :update-last-error nil))))
 
 (defun kubernetes-state-trigger-redraw ()
-  (kubernetes-state-update :update-current-time (current-time))
-  (kubernetes-state-clear-error-if-stale kubernetes-minimum-error-display-time)
-  (run-hooks 'kubernetes-redraw-hook))
+  (save-excursion
+    (kubernetes-state-update :update-current-time (current-time))
+    (kubernetes-state-clear-error-if-stale kubernetes-minimum-error-display-time)
+    (run-hooks 'kubernetes-redraw-hook)))
 
 ;;; Poll progress tracking
 (defvar kubernetes--poll-progress-clear-delay 1
