@@ -141,7 +141,87 @@
 
 ;; Requests and state management
 
-(kubernetes-state-define-refreshers deployments)
+;; Incremental deployments refresher with paging and progress updates.
+(defun kubernetes-deployments-refresh (&optional interactive)
+  (unless (poll-process-live-p kubernetes--global-process-ledger 'deployments)
+    (set-process-for-resource kubernetes--global-process-ledger 'deployments t)
+    (let* ((state (kubernetes-state))
+           (ns (kubernetes-state--get state 'current-namespace))
+           (accum '())
+           (total-estimate nil)
+           (started (current-time))
+           (update-state
+            (lambda (page)
+              ;; Merge items and maintain metadata we care about.
+              (-let* (((&alist 'items items
+                               'remainingItemCount rem
+                               'continue cont)
+                       page)
+                      (items (append items nil)))
+                (setq accum (append accum items))
+                (when (and (numberp rem) (>= rem 0))
+                  (setq total-estimate (+ (length accum) rem)))
+                (kubernetes--info "Deployments page: items=%d rem=%s cont=%s accum=%d"
+                                  (length items) (or rem "-") (if (and cont (stringp cont) (not (string-empty-p cont))) "Y" "N") (length accum))
+                (kubernetes-state-update-deployments `((items . ,(vconcat accum))
+                                                       (remainingItemCount . ,rem)
+                                                       (continue . ,cont)
+                                                       (started . ,started)))
+                (kubernetes-state-trigger-redraw)))))
+      ;; Start a new progress cycle for deployments alone when called interactively or by overview
+      (kubernetes--info "Deployments refresh started: ns=%s chunk=%s" (or ns "<all>") kubernetes-list-chunk-size)
+      (kubernetes-progress-start '(deployments))
+      (kubernetes--info "Deployments fetching first page…")
+      (let ((fallback (lambda ()
+                        (kubernetes--warn "Deployments using fallback (single-shot get).")
+                        (kubernetes-kubectl-get
+                         "deployments" state
+                         (lambda (json)
+                           (kubernetes-state-update-deployments json)
+                           (kubernetes--info "Deployments fallback complete: total=%d"
+                                             (length (append (alist-get 'items json) nil)))
+                           (kubernetes-state-trigger-redraw)
+                           (kubernetes-progress-tick 'deployments)
+                           (release-process-for-resource kubernetes--global-process-ledger 'deployments)
+                           (when interactive
+                             (message "Updated deployments (fallback).")))))))
+        (if (not kubernetes-deployments-use-paging)
+            (funcall fallback)
+          (condition-case err
+              (progn
+                (kubernetes-kubectl-list-paged-deployments
+                 state kubernetes-list-chunk-size
+                 update-state
+                 (lambda ()
+                   (kubernetes--info "Deployments complete: total=%d took=%s" (length accum) (kubernetes--time-diff-string started (current-time)))
+                   (kubernetes-progress-tick 'deployments)
+                   (release-process-for-resource kubernetes--global-process-ledger 'deployments)
+                   (when interactive
+                     (message "Updated deployments.")))))
+            (error
+             (kubernetes--error "Deployments pager failed: %S" err)
+             (funcall fallback))
+            (:success
+             nil))
+          ;; Safety net: if nothing updated within a short delay, use fallback.
+          (run-at-time 3 nil
+                       (lambda ()
+                         (let* ((cur (kubernetes-state--get (kubernetes-state) 'deployments))
+                                (items (append (alist-get 'items cur) nil)))
+                           (when (or (null cur) (null items))
+                             (funcall fallback))))))
+        ;; Safety net: if nothing updated within a short delay, use fallback.
+        (run-at-time 3 nil
+                     (lambda ()
+                       (let* ((cur (kubernetes-state--get (kubernetes-state) 'deployments))
+                              (items (append (alist-get 'items cur) nil)))
+                         (when (or (null cur) (null items))
+                           (funcall fallback))))))
+      nil)))
+
+(defun kubernetes-deployments-refresh-now (&optional interactive)
+  (interactive "p")
+  (kubernetes-deployments-refresh interactive))
 
 (defun kubernetes-deployments-delete-marked (state)
   (let ((names (kubernetes-state--get state 'marked-deployments)))

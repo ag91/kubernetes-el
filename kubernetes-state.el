@@ -35,6 +35,8 @@
        (setf (alist-get 'kubectl-flags next) args))
       (:update-overview-sections
        (setf (alist-get 'overview-sections next) args))
+      (:update-poll-progress
+       (setf (alist-get 'poll-progress next) args))
 
       (:update-config
        (setf (alist-get 'config next) args)
@@ -586,15 +588,18 @@ arguments."
        (defun ,(intern (format "kubernetes-%s-refresh" s-attr)) (&optional interactive)
          (unless (poll-process-live-p kubernetes--global-process-ledger (quote ,attr))
            (set-process-for-resource kubernetes--global-process-ledger (quote ,attr)
-            (funcall
-             ,canned
-             (kubernetes-state)
-             (lambda (response)
-               (,(intern (format "kubernetes-state-update-%s" s-attr)) response)
-               (when interactive
-                 (message (concat "Updated " ,s-attr "."))))
-             (-partial 'release-process-for-resource kubernetes--global-process-ledger (quote ,attr))
-             ))))
+                                     (funcall
+                                      ,canned
+                                      (kubernetes-state)
+                                      (lambda (response)
+                                        (,(intern (format "kubernetes-state-update-%s" s-attr)) response)
+                                        (kubernetes-progress-tick (quote ,attr))
+                                        (when interactive
+                                          (message (concat "Updated " ,s-attr "."))))
+                                      (lambda ()
+                                        (release-process-for-resource kubernetes--global-process-ledger (quote ,attr))
+                                        (kubernetes-progress-tick (quote ,attr)))
+                                      ))))
        (defun ,(intern (format "kubernetes-%s-refresh-now" s-attr)) (&optional interactive)
          (interactive "p")
          (kubernetes-state--refresh-now (quote ,attr) interactive ,raw)))))
@@ -799,7 +804,64 @@ pod, secret, configmap, etc."
   (kubernetes-state-clear-error-if-stale kubernetes-minimum-error-display-time)
   (run-hooks 'kubernetes-redraw-hook))
 
+;;; Poll progress tracking
+(defvar kubernetes--poll-progress-clear-delay 1
+     "Seconds to wait before clearing progress after completion.")
 
+(defvar kubernetes--poll-progress-id 0
+     "Monotonic identifier for poll cycles.")
+
+(defun kubernetes-progress--next-id ()
+  (setq kubernetes--poll-progress-id (1+ kubernetes--poll-progress-id)))
+
+;; Minimal accessor to avoid macro dependencies
+(defun kubernetes-state-update-poll-progress (progress)
+     (let ((prev (alist-get 'poll-progress (kubernetes-state))))
+            (kubernetes-state-update :update-poll-progress progress)
+            (unless prev (kubernetes-state-trigger-redraw))
+            progress))
+
+(defun kubernetes-progress-start (resource-syms)
+     "Start a new poll progress cycle for RESOURCE-SYMS (list of symbols)."
+     (let* ((unique (-uniq resource-syms))
+                      (total (length unique))
+                      (id (kubernetes-progress--next-id))
+                      (now (current-time))
+                      (progress `((id . ,id)
+                                                        (total . ,total)
+                                                        (done . 0)
+                                                        (completed . nil)
+                                                        (started . ,now))))
+            (kubernetes-state-update-poll-progress progress)
+            (kubernetes-state-trigger-redraw)
+            progress))
+
+(defun kubernetes-progress-tick (resource)
+  "Mark RESOURCE as completed in the current poll progress, if any."
+  (let* ((progress (alist-get 'poll-progress (kubernetes-state))))
+    (when (and (listp progress) (alist-get 'id progress))
+      (let* ((completed (alist-get 'completed progress))
+             (already (member resource completed)))
+        (unless already
+          (let* ((new-completed (cons resource completed))
+                 (done (1+ (alist-get 'done progress)))
+                 (total (alist-get 'total progress))
+                 (updated (list (cons 'id (alist-get 'id progress))
+                                (cons 'total total)
+                                (cons 'done done)
+                                (cons 'completed new-completed)
+                                (cons 'started (alist-get 'started progress)))))
+            (kubernetes-state-update-poll-progress updated)
+            (kubernetes-state-trigger-redraw)
+            (when (>= done total)
+              (run-at-time kubernetes--poll-progress-clear-delay nil
+                           #'kubernetes-progress-clear))))))))
+
+(defun kubernetes-progress-clear ()
+  "Clear current poll progress."
+  (when (alist-get 'poll-progress (kubernetes-state))
+    (kubernetes-state-update-poll-progress nil)
+    (kubernetes-state-trigger-redraw)))
 (provide 'kubernetes-state)
 
 ;;; kubernetes-state.el ends here

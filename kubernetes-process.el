@@ -172,8 +172,15 @@ If CLEANUP is non-nil, terminate the proxy process immediately after BODY."
      ,@body))
 
 (cl-defmethod poll-process-live-p ((ledger kubernetes--process-ledger) resource)
-  "Determine liveness of polling process for RESOURCE in LEDGER."
-  (process-live-p (get-process-for-resource ledger resource)))
+  "Determine liveness of polling process for RESOURCE in LEDGER.
+
+Treats any non-nil sentinel value as \"busy\" to support multi-page
+operations that do not track a single OS process."
+  (let ((p (get-process-for-resource ledger resource)))
+    (cond
+     ((processp p) (process-live-p p))
+     (p t)
+     (t nil))))
 
 (cl-defmethod release-all ((ledger kubernetes--process-ledger))
   "Release all processes in LEDGER.
@@ -197,7 +204,7 @@ If the process is already dead, clean it up."
     (when (process-live-p proc)
       (kubernetes-process-kill-quietly proc))
     (if (not (slot-value ledger 'poll-processes))
-        (object-add-to-list ledger 'poll-processes '(resource nil))
+        (object-add-to-list ledger 'poll-processes (cons resource nil))
       (setf (alist-get resource (slot-value ledger 'poll-processes)) nil))))
 
 (cl-defmethod set-process-for-resource ((ledger kubernetes--process-ledger)
@@ -216,6 +223,30 @@ LEDGER."
 
 (defvar kubernetes--global-process-ledger (kubernetes--process-ledger)
   "Global process tracker for kubernetes-el.")
+
+;; Stale lock handling for paged/non-process polling
+(defun kubernetes-process-release-stale-lock (resource &optional ttl-seconds)
+  "Release a stale polling lock for RESOURCE if present.
+
+If the ledger entry is non-process (e.g., a sentinel like t) and the
+resource state has no recent 'started timestamp, release the lock so
+refreshers can run again.
+
+TTL-SECONDS defaults to 10 seconds. If the state has no 'started timestamp,
+consider it stale immediately."
+  (let* ((ttl (or ttl-seconds 10))
+         (ledger kubernetes--global-process-ledger)
+         (entry (get-process-for-resource ledger resource)))
+    (when entry
+      (if (processp entry)
+          nil
+        (let* ((st (kubernetes-state))
+               (res (and (listp st) (kubernetes-state--get st resource)))
+               (started (and (listp res) (alist-get 'started res)))
+               (age (and started (float-time (time-subtract (current-time) started)))))
+          (when (or (not started) (>= age ttl))
+            (kubernetes--warn "Releasing stale poll lock for %s (age=%s)" resource (or age "nil"))
+            (release-process-for-resource ledger resource)))))))
 
 (defun kubernetes-process-kill-quietly (proc &optional _signal)
   "Kill process PROC silently and the associated buffer, suppressing all errors."

@@ -3,7 +3,9 @@
 ;;; Code:
 
 (require 'dash)
+(require 's)
 (require 'with-editor)
+(require 'url-util)
 
 (require 'kubernetes-core)
 (require 'kubernetes-process)
@@ -74,6 +76,7 @@ Returns the process object for this execution of kubectl."
                                       (ignore-errors (kill-buffer err-buf))))
                 nil t))
 
+    (kubernetes--info "spawn kubectl: %s" (s-join " " command))
     (make-process
      :name (format "kubectl: %s" (s-join " " command))
      :buffer buf
@@ -86,16 +89,19 @@ Returns the process object for this execution of kubectl."
            (let ((exit-code (process-exit-status proc)))
              (cond
               ((zerop exit-code)
+               (kubernetes--info "kubectl finished (0): %s" (s-join " " command))
                (funcall on-success buf))
               (t
                (let ((err-message (with-current-buffer err-buf (buffer-string))))
                  (unless (= 9 exit-code)
                    (kubernetes-state-update-last-error err-message (string-join command " ") (current-time))))
+               (kubernetes--info "kubectl failed (%d): %s" exit-code (string-trim (with-current-buffer err-buf (buffer-string))))
                (cond (on-error
                       (funcall on-error err-buf))
                      (t
                       (kubernetes-kubectl--default-error-handler status))))))
          (when cleanup-cb
+           (kubernetes--info "kubectl cleanup: %s" (s-join " " command))
            (funcall cleanup-cb))
          (kubernetes-process-kill-quietly proc))))))
 
@@ -113,6 +119,147 @@ CLEANUP-CB is a function taking no arguments used to release any resources."
                           (funcall cb json)))
                       nil
                       cleanup-cb))
+
+;; Paged list support using --raw and continue tokens
+(defun kubernetes-kubectl--raw-json (state path cb &optional cleanup-cb)
+  "Call kubectl --raw PATH, parse JSON, and pass to CB.
+
+STATE is the application state.
+CB receives the parsed JSON alist."
+  (kubernetes--info "kubectl --raw request: %s" path)
+  ;; Use explicit flags override so namespace and other global flags
+  ;; are NOT added (we already embed ns in PATH when needed).
+  (kubernetes-kubectl state
+                      (list "get" (concat "--raw=" path))
+                      (lambda (buf)
+                        (let ((json (with-current-buffer buf
+                                      (json-read-from-string (buffer-string)))))
+                          (when (listp json)
+                            (let ((items (append (alist-get 'items json) nil))
+                                  (cont (alist-get 'continue json))
+                                  (rem (alist-get 'remainingItemCount json)))
+                              (kubernetes--info "kubectl --raw response: items=%s rem=%s cont=%s"
+                                                (if items (length items) 0)
+                                                (or rem "-")
+                                                (if (and cont (stringp cont) (not (string-empty-p cont))) "Y" "N"))))
+                          (funcall cb json)))
+                      nil
+                      cleanup-cb
+                      :flags '())
+  cleanup-cb)
+
+(defun kubernetes-kubectl-list-paged-deployments (state chunk on-page on-complete)
+  "List deployments in pages of CHUNK size.
+
+ON-PAGE is called with each page JSON (alist) as it arrives.
+ON-COMPLETE is called with no args when listing finishes."
+  (let ((continue-token nil))
+    (cl-labels
+        ((next-page ()
+           (let* ((ns (kubernetes-state--get state 'current-namespace))
+                  (ns-seg (if ns (format "/namespaces/%s" ns) ""))
+                  (path (format "/apis/apps/v1%s/deployments?limit=%d%s"
+                                ns-seg
+                                (or chunk (and (boundp 'kubernetes-list-chunk-size)
+                                               kubernetes-list-chunk-size)
+                                    100)
+                                (if continue-token
+                                    (concat "&continue=" (url-hexify-string continue-token))
+                                  ""))))
+             (kubernetes--info "deployments next-page: %s" path)
+             (kubernetes-kubectl--raw-json
+              state path
+              (lambda (json)
+                (condition-case err
+                    (progn
+                      (setq continue-token (alist-get 'continue json))
+                      (kubernetes--info "deployments page received: items=%s cont=%s"
+                                        (let ((items (append (alist-get 'items json) nil)))
+                                          (if items (length items) 0))
+                                        (if (and continue-token (stringp continue-token) (not (string-empty-p continue-token))) "Y" "N"))
+                      (when (functionp on-page)
+                        (funcall on-page json))
+                      (if (and continue-token (stringp continue-token) (not (string-empty-p continue-token)))
+                          (next-page)
+                        (kubernetes--info "deployments on-complete")
+                        (when (functionp on-complete)
+                          (funcall on-complete))))
+                  (error (kubernetes--error "deployments page error: %S" err)))))))
+         (next-page)))))
+
+(defun kubernetes-kubectl-list-paged-replicasets (state chunk on-page on-complete)
+  "List replicasets in pages of CHUNK size.
+
+ON-PAGE is called with each page JSON (alist) as it arrives.
+ON-COMPLETE is called with no args when listing finishes."
+  (let ((continue-token nil))
+    (cl-labels
+        ((next-page ()
+           (let* ((ns (kubernetes-state--get state 'current-namespace))
+                  (ns-seg (if ns (format "/namespaces/%s" ns) ""))
+                  (path (format "/apis/apps/v1%s/replicasets?limit=%d%s"
+                                ns-seg
+                                (or chunk (and (boundp 'kubernetes-list-chunk-size)
+                                               kubernetes-list-chunk-size)
+                                    100)
+                                (if continue-token
+                                    (concat "&continue=" (url-hexify-string continue-token))
+                                  "")))))
+           (kubernetes--info "replicasets next-page: %s" path)
+           (kubernetes-kubectl--raw-json
+            state path
+            (lambda (json)
+              (condition-case err
+                  (progn
+                    (setq continue-token (alist-get 'continue json))
+                    (kubernetes--info "replicasets page received: items=%s cont=%s"
+                                      (let ((items (append (alist-get 'items json) nil)))
+                                        (if items (length items) 0))
+                                      (if (and continue-token (stringp continue-token) (not (string-empty-p continue-token))) "Y" "N"))
+                    (funcall on-page json)
+                    (if (and continue-token (stringp continue-token) (not (string-empty-p continue-token)))
+                        (next-page)
+                      (kubernetes--info "replicasets on-complete")
+                      (funcall on-complete)))
+                (error (kubernetes--error "replicasets page error: %S" err))))))
+         (next-page)))))
+
+(defun kubernetes-kubectl-list-paged-pods (state chunk on-page on-complete)
+  "List pods in pages of CHUNK size.
+
+ON-PAGE is called with each page JSON (alist) as it arrives.
+ON-COMPLETE is called with no args when listing finishes."
+  (let ((continue-token nil))
+    (cl-labels
+        ((next-page ()
+           (let* ((ns (kubernetes-state--get state 'current-namespace))
+                  (ns-seg (if ns (format "/namespaces/%s" ns) ""))
+                  (path (format "/api/v1%s/pods?limit=%d%s"
+                                ns-seg
+                                (or chunk (and (boundp 'kubernetes-list-chunk-size)
+                                               kubernetes-list-chunk-size)
+                                    100)
+                                (if continue-token
+                                    (concat "&continue=" (url-hexify-string continue-token))
+                                  "")))))
+           (kubernetes--info "pods next-page: %s" path)
+           (kubernetes-kubectl--raw-json
+            state path
+            (lambda (json)
+              (condition-case err
+                  (progn
+                    (setq continue-token (alist-get 'continue json))
+                    (kubernetes--info "pods page received: items=%s cont=%s"
+                                      (let ((items (append (alist-get 'items json) nil)))
+                                        (if items (length items) 0))
+                                      (if (and continue-token (stringp continue-token) (not (string-empty-p continue-token))) "Y" "N"))
+                    (funcall on-page json)
+                    (if (and continue-token (stringp continue-token) (not (string-empty-p continue-token)))
+                        (next-page)
+                      (kubernetes--info "pods on-complete")
+                      (funcall on-complete)))
+                (error (kubernetes--error "pods page error: %S" err))))))
+         (next-page)))))
 
 (defun kubernetes-kubectl-delete (type name state cb &optional error-cb)
   "Delete resource of TYPE and NAME; execute CB with the response buffer.

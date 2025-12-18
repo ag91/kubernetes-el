@@ -193,7 +193,46 @@
 
 ;; Requests and state management
 
-(kubernetes-state-define-refreshers pods)
+;; Incremental pods refresher with paging and progress updates.
+(defun kubernetes-pods-refresh (&optional interactive)
+  (unless (poll-process-live-p kubernetes--global-process-ledger 'pods)
+    (set-process-for-resource kubernetes--global-process-ledger 'pods t)
+    (let* ((state (kubernetes-state))
+           (ns (kubernetes-state--get state 'current-namespace))
+           (accum '())
+           (started (current-time))
+           (update-state
+            (lambda (page)
+              (-let* (((&alist 'items items
+                               'remainingItemCount rem
+                               'continue cont)
+                       page)
+                      (items (append items nil)))
+                (setq accum (append accum items))
+                (kubernetes--info "Pods page: items=%d rem=%s cont=%s accum=%d"
+                                  (length items) (or rem "-") (if (and cont (stringp cont) (not (string-empty-p cont))) "Y" "N") (length accum))
+                (kubernetes-state-update-pods `((items . ,(vconcat accum))
+                                                (remainingItemCount . ,rem)
+                                                (continue . ,cont)
+                                                (started . ,started)))
+                (kubernetes-state-trigger-redraw)))))
+      (kubernetes--info "Pods refresh started: ns=%s chunk=%s" (or ns "<all>") kubernetes-list-chunk-size)
+      (kubernetes-progress-start '(pods))
+      (kubernetes--info "Pods fetching first page…")
+      (kubernetes-kubectl-list-paged-pods
+       state kubernetes-list-chunk-size
+       update-state
+       (lambda ()
+         (kubernetes--info "Pods complete: total=%d took=%s" (length accum) (kubernetes--time-diff-string started (current-time)))
+         (kubernetes-progress-tick 'pods)
+         (release-process-for-resource kubernetes--global-process-ledger 'pods)
+         (when interactive
+           (message "Updated pods."))))))
+  nil)
+
+(defun kubernetes-pods-refresh-now (&optional interactive)
+  (interactive "p")
+  (kubernetes-pods-refresh interactive))
 
 ;; Displaying pods
 

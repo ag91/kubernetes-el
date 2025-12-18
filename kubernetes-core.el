@@ -7,7 +7,7 @@
 
 (require 'kubernetes-ast)
 (require 'kubernetes-vars)
-
+(require 'subr-x)
 
 (defun kubernetes--parse-utc-timestamp (timestamp)
   "Parse TIMESTAMP string from the API into the representation used by Emacs."
@@ -40,6 +40,7 @@ window state."
 (defun kubernetes--overview-render (state)
   (let ((sections (kubernetes-state-overview-sections state)))
     `(section (root nil)
+              ,(kubernetes-progress-render state)
               ,(kubernetes-errors-render state)
               ,(when (member 'context sections)
                  (kubernetes-contexts-render state))
@@ -119,6 +120,40 @@ This is used to regularly synchronise local state with Kubernetes.")
 
 This is used to display the current state.")
 
+;; Progress bar rendering
+(defun kubernetes--progress-bar (done total width)
+  (let* ((width (max 1 width))
+         (ratio (if (<= total 0) 0 (/ (float done) (max 1 total))))
+         (filled (min width (floor (* ratio width))))
+         (empty (- width filled)))
+    (format "[%s%s] %d/%d (%d%%)"
+            (make-string filled ?#)
+            (make-string empty ?.)
+            done total (truncate (* 100 ratio)))))
+
+(kubernetes-ast-define-component kubernetes-progress-render (state)
+  (-let* (((&alist 'poll-progress progress) state)
+          (progress (or progress (alist-get 'poll-progress state))))
+    (when (and (listp progress) (alist-get 'total progress))
+      (let* ((done (alist-get 'done progress))
+             (total (alist-get 'total progress))
+             (bar (kubernetes--progress-bar done total 20)))
+        `(section (progress nil)
+                  (line (propertize (face kubernetes-progress-indicator) ,bar)))))))
+
+;; Provide a function variant, like kubernetes-errors-render, so callers can
+;; evaluate it and splice the resulting AST (e.g., inside quasiquotes).
+(defun kubernetes-progress-render (state)
+  "Return AST to render poll progress for STATE."
+  (-let* (((&alist 'poll-progress progress) state)
+          (progress (or progress (alist-get 'poll-progress state))))
+    (when (and (listp progress) (alist-get 'total progress))
+      (let* ((done (alist-get 'done progress))
+             (total (alist-get 'total progress))
+             (bar (kubernetes--progress-bar done total 20)))
+        `(section (progress nil)
+                  (line (propertize (face kubernetes-progress-indicator) ,bar)))))))
+
 (defun kubernetes--initialize-timers ()
   "Initialize kubernetes.el global timers.
 
@@ -129,8 +164,8 @@ polling according to `kubernetes-redraw-frequency' and
     (setq kubernetes--redraw-timer (run-with-timer 0 kubernetes-redraw-frequency #'kubernetes-state-trigger-redraw)))
   (unless kubernetes--poll-timer
     (setq kubernetes--poll-timer (run-with-timer 0 kubernetes-poll-frequency
-                                       (lambda ()
-                                         (run-hooks 'kubernetes-poll-hook))))))
+                                                 (lambda ()
+                                                   (run-hooks 'kubernetes-poll-hook))))))
 
 (defun kubernetes--kill-timers ()
   "Kill kubernetes.el global timers."

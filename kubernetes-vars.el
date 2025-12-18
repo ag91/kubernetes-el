@@ -17,6 +17,20 @@
   :group 'kubernetes
   :type 'integer)
 
+(defcustom kubernetes-list-chunk-size 100
+  "Maximum number of items to fetch per page when listing resources.
+
+Used for incremental loading of large resource lists (e.g., deployments)."
+  :group 'kubernetes
+  :type 'integer)
+
+(defcustom kubernetes-deployments-use-paging t
+  "If non-nil, load deployments with paged requests.
+
+Disable to always use a single-shot kubectl get for deployments."
+  :group 'kubernetes
+  :type 'boolean)
+
 (defcustom kubernetes-default-proxy-port 8001
   "Default port to run kubectl proxies on."
   :group 'kubernetes

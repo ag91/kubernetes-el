@@ -348,8 +348,25 @@ This function finds pods by matching the statefulset's UID with pod's ownerRefer
 (defalias 'kubernetes-overview--redraw-buffer 'kubernetes--redraw-overview-buffer)
 
 (defun kubernetes-overview--poll (&optional verbose)
-  (let ((sections (kubernetes-state-overview-sections (kubernetes-state))))
+  (let* ((sections (kubernetes-state-overview-sections (kubernetes-state)))
+         (resources (seq-filter
+                     #'identity
+                     (append
+                      (when (member 'overview sections)
+                        '(pods replicasets configmaps secrets statefulsets deployments))
+                      (seq-remove (lambda (s) (memq s '(context overview))) sections))))
+         (resources (-uniq resources)))
+    (kubernetes--info "Overview poll: sections=%S resources=%S" sections resources)
+    (when resources (kubernetes-progress-start resources))
+
     (when (member 'overview sections)
+      ;; Clear any stale non-process locks before kicking off refreshers
+      (kubernetes-process-release-stale-lock 'pods)
+      (kubernetes-process-release-stale-lock 'replicasets)
+      (kubernetes-process-release-stale-lock 'configmaps)
+      (kubernetes-process-release-stale-lock 'secrets)
+      (kubernetes-process-release-stale-lock 'statefulsets)
+      (kubernetes-process-release-stale-lock 'deployments)
       (kubernetes-pods-refresh verbose)
       (kubernetes-replicasets-refresh verbose)
       (kubernetes-configmaps-refresh verbose)
@@ -365,6 +382,7 @@ This function finds pods by matching the statefulset's UID with pod's ownerRefer
     (when (member 'jobs sections)
       (kubernetes-jobs-refresh verbose))
     (when (member 'deployments sections)
+      (kubernetes-process-release-stale-lock 'deployments 10)
       (kubernetes-deployments-refresh verbose))
     (when (member 'statefulsets sections)
       (kubernetes-statefulsets-refresh verbose))

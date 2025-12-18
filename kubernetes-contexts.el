@@ -59,11 +59,11 @@
 
 ;; Requests and state management
 
-(kubernetes-state-define-refreshers config kubernetes-kubectl-config-view
+(kubernetes-state-define-refreshers config #'kubernetes-kubectl-config-view
   "config view -o json")
 
 (defalias 'kubernetes-contexts-refresh-now 'kubernetes-config-refresh-now)
-(defalias 'kubernetes-contexts-refresh 'kubernetes-config-refresh-now)
+(defalias 'kubernetes-contexts-refresh 'kubernetes-config-refresh)
 (defun kubernetes-state-contexts (state)
   (kubernetes-state--get state 'config))
 (defalias 'kubernetes-state-update-contexts 'kubernetes-state-update-config)
