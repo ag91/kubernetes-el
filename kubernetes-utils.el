@@ -67,6 +67,10 @@ Returns nil on invalid input."
   "Return the job name if point is on a job, nil otherwise."
   (kubernetes-utils-get-resource-name-at-point "job"))
 
+(defun kubernetes-utils-maybe-daemonset-name-at-point ()
+  "Return the job name if point is on a job, nil otherwise."
+  (kubernetes-utils-get-resource-name-at-point "daemonset"))
+
 (defalias 'kubernetes-utils-parse-utc-timestamp 'kubernetes--parse-utc-timestamp)
 
 (defun kubernetes-utils-make-cleanup-fn (buf)

@@ -13,6 +13,7 @@
 (defconst kubernetes-describable-resources
   '("configmap" "deployment" "ingress" "job" "namespace" "node"
     "persistentvolumeclaim" "pod" "secret" "service" "statefulset"
+    "daemonset"
     "networkpolicy" "cronjob")
   "List of Kubernetes resource types that support `kubectl describe`.")
 
@@ -208,7 +209,7 @@ NODE-NAME is the name of the node to describe.")
 (defalias 'kubernetes-describe-statefulset
   (lambda (statefulset-name)
     (interactive (list (or (kubernetes-utils-maybe-statefulset-name-at-point)
-                          (kubernetes-statefulsets--read-name (kubernetes-state)))))
+                           (kubernetes-statefulsets--read-name (kubernetes-state)))))
     (kubernetes-describe-resource "statefulset" statefulset-name))
   "Display a buffer for describing a statefulset.
 STATEFULSET-NAME is the name of the statefulset to describe.")
@@ -217,10 +218,20 @@ STATEFULSET-NAME is the name of the statefulset to describe.")
 (defalias 'kubernetes-describe-job
   (lambda (job-name)
     (interactive (list (or (kubernetes-utils-maybe-job-name-at-point)
-                          (kubernetes-jobs--read-name (kubernetes-state)))))
+                           (kubernetes-jobs--read-name (kubernetes-state)))))
     (kubernetes-describe-resource "job" job-name))
   "Display a buffer for describing a job.
 JOB-NAME is the name of the job to describe.")
+
+;;;###autoload
+(defalias 'kubernetes-describe-daemonset
+  (lambda (daemonset-name)
+    (interactive (list (or (kubernetes-utils-maybe-daemonset-name-at-point)
+                           (kubernetes-daemonsets--read-name (kubernetes-state)))))
+    (kubernetes-describe-resource "daemonset" daemonset-name))
+  "Display a buffer for describing a daemonset.
+DAEMONSET-NAME is the name of the daemonset to describe.")
+
 
 (provide 'kubernetes-describe)
 

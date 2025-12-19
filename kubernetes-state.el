@@ -290,6 +290,32 @@
                (seq-intersection (alist-get 'deployments-pending-deletion next)
                                  deployment-names))))
 
+      ;; Daemonsets
+
+      (:mark-daemonset
+       (let ((cur (alist-get 'marked-daemonsets state)))
+         (setf (alist-get 'marked-daemonsets next)
+               (delete-dups (cons args cur)))))
+      (:unmark-daemonset
+       (setf (alist-get 'marked-daemonsets next)
+             (remove args (alist-get 'marked-daemonsets next))))
+      (:delete-daemonset
+       (let ((updated (cons args (alist-get 'daemonsets-pending-deletion state))))
+         (setf (alist-get 'daemonsets-pending-deletion next)
+               (delete-dups updated))))
+      (:update-daemonsets
+       (setf (alist-get 'daemonsets next) args)
+
+       ;; Prune deleted daemonsets from state.
+       (-let* (((&alist 'items daemonsets) args)
+               (daemonset-names (seq-map #'kubernetes-state-resource-name (append daemonsets nil))))
+         (setf (alist-get 'marked-daemonsets next)
+               (seq-intersection (alist-get 'marked-daemonsets next)
+                                 daemonset-names))
+         (setf (alist-get 'daemonsets-pending-deletion next)
+               (seq-intersection (alist-get 'daemonsets-pending-deletion next)
+                                 daemonset-names))))
+
       ;; Statefulsets
 
       (:mark-statefulset
@@ -652,6 +678,9 @@ arguments."
 (kubernetes-state--define-setter deployments (deployments)
   (cl-assert (listp deployments)))
 
+
+(kubernetes-state--define-setter daemonsets (daemonsets)
+  (cl-assert (listp daemonsets)))
 (kubernetes-state--define-setter nodes (nodes)
   (cl-assert (listp nodes)))
 
@@ -701,9 +730,9 @@ arguments."
                                   persistentvolumeclaims
                                   networkpolicies
                                   cronjobs
-                                  replicasets))
+                                  replicasets
+                                  daemonsets))
                      resources)))
-
 (defun kubernetes-state-kubectl-flags (state)
   (or (alist-get 'kubectl-flags state)
       (let ((updated (kubernetes-state-update :update-kubectl-flags kubernetes-kubectl-flags)))
@@ -761,6 +790,7 @@ If lookup fails, return nil."
 (kubernetes-state-define-named-lookup configmap configmaps)
 (kubernetes-state-define-named-lookup deployment deployments)
 (kubernetes-state-define-named-lookup statefulset statefulsets)
+(kubernetes-state-define-named-lookup daemonset daemonsets)
 (kubernetes-state-define-named-lookup ingress ingress)
 (kubernetes-state-define-named-lookup job jobs)
 (kubernetes-state-define-named-lookup namespace namespaces)
@@ -866,3 +896,7 @@ pod, secret, configmap, etc."
 (provide 'kubernetes-state)
 
 ;;; kubernetes-state.el ends here
+
+(kubernetes-state--define-setter daemonsets (daemonsets)
+  (cl-assert (listp daemonsets)))
+(kubernetes-state-define-named-lookup daemonset daemonsets)

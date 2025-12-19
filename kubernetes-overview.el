@@ -12,6 +12,7 @@
 (require 'kubernetes-cronjobs)
 (require 'kubernetes-deployments)
 (require 'kubernetes-statefulsets)
+(require 'kubernetes-daemonsets)
 (require 'kubernetes-nodes)
 (require 'kubernetes-errors)
 (require 'kubernetes-ingress)
@@ -316,7 +317,11 @@ This function finds pods by matching the statefulset's UID with pod's ownerRefer
     (-let (((state-set-p &as &alist 'items statefulsets)
             (kubernetes-state--get state 'statefulsets))
            ([fmt0 labels0] kubernetes-statefulsets--column-heading)
-           ([fmt1 labels1] kubernetes-deployments--column-heading))
+
+           ([fmt1 labels1] kubernetes-deployments--column-heading)
+           ([fmt2 labels2] kubernetes-daemonsets--column-heading)
+           ((state-set-p &as &alist 'items daemonsets)
+            (kubernetes-state--get state 'daemonsets)))
       `(section (ubercontainer, nil)
                 (section (overview-container ,hidden)
                          (header-with-count "Statefulsets" ,statefulsets)
@@ -339,7 +344,19 @@ This function finds pods by matching the statefulset's UID with pod's ownerRefer
                              'face
                              'magit-section-heading)
                            ,@(--map `(aggregated-deployment ,state ,it) deployments)))
+                         (padding))
+                (section (overview-container ,hidden)
+                         (header-with-count "Daemonsets" ,(kubernetes-state--get state 'daemonsets))
+                         (indent
+                          (columnar-loading-container
+                           ,(kubernetes-state--get state 'daemonsets)
+                           ,(propertize
+                             (apply #'format fmt2 (split-string labels2))
+                             'face
+                             'magit-section-heading)
+                           ,@(--map `(daemonset ,state ,it) daemonsets)))
                          (padding))))))
+
 
 (defalias 'kubernetes-overview-render 'kubernetes--overview-render)
 
@@ -353,14 +370,16 @@ This function finds pods by matching the statefulset's UID with pod's ownerRefer
                      #'identity
                      (append
                       (when (member 'overview sections)
-                        '(pods replicasets configmaps secrets statefulsets deployments))
+                        '(pods replicasets configmaps secrets statefulsets deployments daemonsets))
                       (seq-remove (lambda (s) (memq s '(context overview))) sections))))
          (resources (-uniq resources)))
+      (kubernetes-process-release-stale-lock 'daemonsets)
     (kubernetes--info "Overview poll: sections=%S resources=%S" sections resources)
     (when resources (kubernetes-progress-start resources))
 
     (when (member 'overview sections)
       ;; Clear any stale non-process locks before kicking off refreshers
+      (kubernetes-daemonsets-refresh verbose)
       (kubernetes-process-release-stale-lock 'pods)
       (kubernetes-process-release-stale-lock 'replicasets)
       (kubernetes-process-release-stale-lock 'configmaps)
