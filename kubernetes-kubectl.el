@@ -165,7 +165,6 @@ stdout buffer contents as a string.  ERROR-CB is invoked on failure."
 ON-PAGE is called with each page JSON (alist) as it arrives.
 ON-COMPLETE is called with no args when listing finishes."
   (let ((continue-token nil))
-    (message "hey-- %s " (list chunk))
     (cl-labels
         ((next-page ()
            (let* ((ns (kubernetes-state--get state 'current-namespace))
@@ -476,3 +475,46 @@ STATE is the current application state.  REPLICAS is an integer."
                         (funcall cb (with-current-buffer buf (buffer-string))))
                       error-cb))
 
+
+;; File-based resource operations: apply/create/replace
+
+(defun kubernetes-kubectl-apply-file (state file cb &optional error-cb)
+  "Run `kubectl apply -f FILE' and call CB with output.
+
+STATE is the current application state.  FILE is a manifest path."
+  (kubernetes-kubectl state
+                      (list "apply" "-f" (expand-file-name file))
+                      (lambda (buf)
+                        (funcall cb (with-current-buffer buf (buffer-string))))
+                      error-cb))
+
+(defun kubernetes-kubectl-create-file (state file cb &optional error-cb)
+  "Run `kubectl create -f FILE' and call CB with output.
+
+STATE is the current application state.  FILE is a manifest path."
+  (kubernetes-kubectl state
+                      (list "create" "-f" (expand-file-name file))
+                      (lambda (buf)
+                        (funcall cb (with-current-buffer buf (buffer-string))))
+                      error-cb))
+
+(defun kubernetes-kubectl-replace-file (state file cb &optional error-cb)
+  "Run `kubectl replace -f FILE' and call CB with output.
+
+STATE is the current application state.  FILE is a manifest path."
+  (kubernetes-kubectl state
+                      (list "replace" "-f" (expand-file-name file))
+                      (lambda (buf)
+                        (funcall cb (with-current-buffer buf (buffer-string))))
+                      error-cb))
+
+
+
+;; Export helpers
+(defun kubernetes-kubectl-get-resource-yaml (state resource-type resource-name cb &optional error-cb)
+  "Get RESOURCE-TYPE/RESOURCE-NAME as YAML and call CB with the string."
+  (kubernetes-kubectl state (list "get" resource-type resource-name "-o" "yaml")
+                     (lambda (buf)
+                       (let ((s (with-current-buffer buf (buffer-string))))
+                         (funcall cb s)))
+                     error-cb))

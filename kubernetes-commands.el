@@ -243,6 +243,9 @@ what to copy."
 
 With optional argument VERBOSE, log status changes."
   (interactive "p")
+  (let ((nav (get-text-property (point) 'kubernetes-nav)))
+    (setq kubernetes-overview--pending-anchor
+          (list (cons 'pos (point)))))
   (run-hook-with-args 'kubernetes-poll-hook verbose)
   (kubernetes-state-trigger-redraw))
 
@@ -506,3 +509,74 @@ desired replica count with a sensible default from the resource spec."
           ("replicaset"
            (kubernetes-kubectl-scale-replicaset state resource-name replicas on-success on-error)))))))
 
+
+;; File-based resource operations and namespace deletion
+(autoload 'kubernetes-kubectl-apply-file "kubernetes-kubectl")
+(autoload 'kubernetes-kubectl-create-file "kubernetes-kubectl")
+(autoload 'kubernetes-kubectl-replace-file "kubernetes-kubectl")
+
+;;;###autoload
+(defun kubernetes-apply-file (file)
+  "Run kubectl apply -f FILE and refresh the overview."
+  (interactive (list (read-file-name "Apply manifest file: " nil nil t)))
+  (let ((state (kubernetes-state)))
+    (kubernetes-kubectl-apply-file
+     state file
+     (lambda (buf)
+       (let ((out (with-current-buffer buf (string-trim (buffer-string)))))
+         (kubernetes--message "%s" out)
+         (kubernetes-refresh)))
+     (lambda (err)
+       (let ((msg (with-current-buffer err (string-trim (buffer-string)))))
+         (kubernetes--error "kubectl apply failed: %s" msg)
+         (user-error "kubectl apply failed"))))))
+
+;;;###autoload
+(defun kubernetes-create-from-file (file)
+  "Run kubectl create -f FILE and refresh the overview."
+  (interactive (list (read-file-name "Create manifest file: " nil nil t)))
+  (let ((state (kubernetes-state)))
+    (kubernetes-kubectl-create-file
+     state file
+     (lambda (buf)
+       (let ((out (with-current-buffer buf (string-trim (buffer-string)))))
+         (kubernetes--message "%s" out)
+         (kubernetes-refresh)))
+     (lambda (err)
+       (let ((msg (with-current-buffer err (string-trim (buffer-string)))))
+         (kubernetes--error "kubectl create failed: %s" msg)
+         (user-error "kubectl create failed"))))))
+
+;;;###autoload
+(defun kubernetes-replace-from-file (file)
+  "Run kubectl replace -f FILE and refresh the overview."
+  (interactive (list (read-file-name "Replace manifest file: " nil nil t)))
+  (let ((state (kubernetes-state)))
+    (kubernetes-kubectl-replace-file
+     state file
+     (lambda (buf)
+       (let ((out (with-current-buffer buf (string-trim (buffer-string)))))
+         (kubernetes--message "%s" out)
+         (kubernetes-refresh)))
+     (lambda (err)
+       (let ((msg (with-current-buffer err (string-trim (buffer-string)))))
+         (kubernetes--error "kubectl replace failed: %s" msg)
+         (user-error "kubectl replace failed"))))))
+
+;;;###autoload
+(defun kubernetes-delete-namespace (name)
+  "Delete a Kubernetes namespace NAME with confirmation."
+  (interactive (let* ((state (kubernetes-state))
+                      (name (completing-read "Delete namespace: " (kubernetes--namespace-names state) nil t)))
+                 (list name)))
+  (when (y-or-n-p (format "Really delete namespace %s? " name))
+    (let ((state (kubernetes-state)))
+      (kubernetes-kubectl-delete "namespace" name state
+                                 (lambda (_)
+                                   (kubernetes--message "Deleted namespace %s" name)
+                                   ;; Refresh namespaces and overview
+                                   (kubernetes-refresh))
+                                 (lambda (err)
+                                   (let ((msg (with-current-buffer err (string-trim (buffer-string)))))
+                                     (kubernetes--error "Delete namespace failed: %s" msg)
+                                     (user-error "Failed to delete namespace %s" name)))))))

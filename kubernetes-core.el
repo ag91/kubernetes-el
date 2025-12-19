@@ -66,6 +66,15 @@ window state."
              (erase-buffer)
              (kubernetes-ast-eval (kubernetes--overview-render (kubernetes-state)))))
 
+          ;; If a poll just completed, restore to the pending overview anchor (if any).
+          (let ((progress (alist-get 'poll-progress (kubernetes-state))))
+            (when (and (null progress)
+                       (boundp 'kubernetes-overview--pending-anchor)
+                       kubernetes-overview--pending-anchor)
+              (goto-char (alist-get 'pos kubernetes-overview--pending-anchor))
+              (setq kubernetes-overview--pending-anchor nil)))
+
+
           ;; Force the section at point to highlight.
           (magit-section-update-highlight))))))
 

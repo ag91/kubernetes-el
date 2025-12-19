@@ -31,6 +31,11 @@
 \\{kubernetes-display-thing-mode-map}"
   :group 'kubernetes)
 
+;; Keybinding specific to describe buffers
+(with-eval-after-load "kubernetes-describe"
+  (when (boundp 'kubernetes-display-thing-mode-map)
+    (define-key kubernetes-display-thing-mode-map (kbd "Y") #'kubernetes-describe-export-yaml)))
+
 ;;;###autoload
 (defvar kubernetes-mode-map
   (let ((keymap (make-sparse-keymap)))
@@ -64,6 +69,7 @@
     (define-key keymap (kbd "g") #'kubernetes-refresh)
     (define-key keymap (kbd "l") #'kubernetes-logs)
     (define-key keymap (kbd "L") #'kubernetes-labels)
+    (define-key keymap (kbd "Y") #'kubernetes-describe-export-yaml)
     (define-key keymap (kbd "s") #'kubernetes-scale-dwim)
 
     (define-key keymap (kbd "T") #'kubernetes-events)

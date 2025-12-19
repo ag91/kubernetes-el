@@ -233,6 +233,32 @@ JOB-NAME is the name of the job to describe.")
 DAEMONSET-NAME is the name of the daemonset to describe.")
 
 
-(provide 'kubernetes-describe)
-
 ;;; kubernetes-describe.el ends here
+
+;;;###autoload
+(defun kubernetes-describe-export-yaml (&optional file)
+  "Export the resource in this describe buffer to YAML.
+If FILE is not provided, prompt using the resource name as default."
+  (interactive)
+  (let* ((state (kubernetes-state))
+         ;; Prefer buffer-local vars set by kubernetes-describe-resource
+         (rtype (or (bound-and-true-p kubernetes-describe-resource-type)
+                    (car (kubernetes-utils-get-resource-info-at-point))))
+         (rname (or (bound-and-true-p kubernetes-describe-resource-name)
+                    (cdr (kubernetes-utils-get-resource-info-at-point)))))
+    (unless (and rtype rname)
+      (user-error "Not in a describe buffer and no resource at point"))
+    (let* ((default-name (format "%s.yaml" rname))
+           (target (or file (read-file-name "Export YAML to: " nil default-name nil default-name))))
+      (kubernetes-kubectl-get-resource-yaml
+       state rtype rname
+       (lambda (yaml)
+         (with-temp-file target
+           (insert yaml))
+         (kubernetes--message "Exported %s %s to %s" rtype rname target))
+       (lambda (err)
+         (let ((msg (with-current-buffer err (string-trim (buffer-string)))))
+           (kubernetes--error "Export failed: %s" msg)
+           (user-error "Failed to export %s %s" rtype rname)))))))
+
+(provide 'kubernetes-describe)

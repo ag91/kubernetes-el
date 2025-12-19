@@ -364,6 +364,11 @@ This function finds pods by matching the statefulset's UID with pod's ownerRefer
 
 (defalias 'kubernetes-overview--redraw-buffer 'kubernetes--redraw-overview-buffer)
 
+
+(defvar kubernetes-overview--pending-anchor nil
+  "Pending point anchor for overview redraw completion.
+Stores an alist with keys 'nav, 'col, and 'winstart captured at poll start.")
+
 (defun kubernetes-overview--poll (&optional verbose)
   (let* ((sections (kubernetes-state-overview-sections (kubernetes-state)))
          (resources (seq-filter

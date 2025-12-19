@@ -61,6 +61,11 @@ If disabling the proxy, ARGS is ignored."
     ("L" "Labels" kubernetes-labels)
     ("l" "Logs" kubernetes-logs-reset-and-launch)
     ("P" "Proxy" kubernetes-proxy)
+    ("a" "Apply manifest" kubernetes-apply-file)
+    ("y" "Create from file" kubernetes-create-from-file)
+    ("r" "Replace from file" kubernetes-replace-from-file)
+    ("X" "Delete namespace" kubernetes-delete-namespace)
+
     ("R" "Restart deployment" kubernetes-deployments-rollout-restart)
     ("s" "Scale" kubernetes-scale-dwim)
     ("T" "Events" kubernetes-events)
