@@ -152,11 +152,18 @@ RESOURCE-NAME is the name of the resource to describe."
                                   (insert "---\n")
                                   (insert s)
                                   (untabify (point-min) (point-max))
-                                  (goto-char (point-min))))))
+                                  (goto-char (point-min))
+                                  ;; If yaml-mode is available, use its font-lock without changing major-mode.
+                                  (when (require 'yaml-mode nil t)
+                                    (when (boundp 'yaml-font-lock-keywords)
+                                      (setq-local font-lock-defaults (list yaml-font-lock-keywords nil t)))
+                                    (font-lock-mode 1)
+                                    (font-lock-flush))
+                                  ))))
            (proc (kubernetes-kubectl-describe-resource state
-                                                      resource-type
-                                                      resource-name
-                                                      populate-buffer)))
+                                                       resource-type
+                                                       resource-name
+                                                       populate-buffer)))
       (with-current-buffer buf
         ;; Store resource information in buffer-local variables for potential reuse
         (setq-local kubernetes-describe-resource-type resource-type)

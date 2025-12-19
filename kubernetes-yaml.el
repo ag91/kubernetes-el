@@ -70,7 +70,12 @@
       (let ((inhibit-read-only t))
         (erase-buffer)
         (kubernetes-ast-eval (kubernetes-yaml-render parsed-json))
-        (goto-char (point-min))))
+        (goto-char (point-min))
+        (when (require 'yaml-mode nil t)
+          (when (boundp 'yaml-font-lock-keywords)
+            (setq-local font-lock-defaults (list yaml-font-lock-keywords nil t)))
+          (font-lock-mode 1)
+          (font-lock-flush))))
     buf))
 
 
