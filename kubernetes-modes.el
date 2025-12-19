@@ -19,6 +19,8 @@
 (autoload 'kubernetes-navigate "kubernetes-commands")
 (autoload 'kubernetes-proxy "kubernetes-popups")
 (autoload 'kubernetes-refresh "kubernetes-commands")
+(autoload 'kubernetes-port-forward-start "kubernetes-port-forward")
+(autoload 'kubernetes-port-forward-kill "kubernetes-port-forward")
 (autoload 'kubernetes-unmark "kubernetes-commands")
 (autoload 'kubernetes-unmark-all "kubernetes-commands")
 
@@ -65,6 +67,9 @@
     (define-key keymap (kbd "T") #'kubernetes-events)
     (define-key keymap (kbd "u") #'kubernetes-unmark)
     (define-key keymap (kbd "U") #'kubernetes-unmark-all)
+    ;; Port-forward
+    (define-key keymap (kbd "F") #'kubernetes-port-forward-start)
+    (define-key keymap (kbd "K") #'kubernetes-port-forward-kill)
     (define-key keymap (kbd "x") #'kubernetes-execute-marks)
 
     keymap)

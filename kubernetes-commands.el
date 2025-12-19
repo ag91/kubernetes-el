@@ -15,6 +15,7 @@
 (require 'kubernetes-utils)
 (require 'kubernetes-namespaces)
 (require 'mode-local)
+(require 'kubernetes-port-forward)
 
 (autoload 'kubernetes-configmaps-delete-marked "kubernetes-configmaps")
 (autoload 'kubernetes-deployments-delete-marked "kubernetes-deployments")
