@@ -440,6 +440,17 @@ HISTORY is the history list to use."
     (kubernetes-utils-read-container-for-resource
      prompt state (car resource-info) (cdr resource-info) initial-input history)))
 
+;; Useful for decoding (and copying) of kubernetes secrets
+(defun kubernetes-base64-decode-symbol-at-point (arg)
+  "Decode symbol at point (useful for displaying the contents of k8s secrets).
+
+With universal arg the value will also be copied (added to the kill-ring).
+"
+  (interactive "P")
+  (let ((result (print (base64-decode-string (thing-at-point 'symbol)))))
+    (when arg (kill-new result))))
+
+
 (provide 'kubernetes-utils)
 
 ;;; kubernetes-utils.el ends here
