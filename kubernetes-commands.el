@@ -456,3 +456,53 @@ STATE is the current application state."
                           (kubernetes--error "Unable to create namespace '%s'" name)
                           (kubernetes--message "%s" err)))))
 
+
+;; Autoload refreshers and scale helpers (appended)
+(autoload 'kubernetes-deployments-refresh "kubernetes-deployments")
+(autoload 'kubernetes-statefulsets-refresh "kubernetes-statefulsets")
+(autoload 'kubernetes-replicasets-refresh "kubernetes-replicasets")
+(autoload 'kubernetes-kubectl-scale-deployment "kubernetes-kubectl")
+(autoload 'kubernetes-kubectl-scale-statefulset "kubernetes-kubectl")
+(autoload 'kubernetes-kubectl-scale-replicaset "kubernetes-kubectl")
+
+;;;###autoload
+(defun kubernetes-scale-dwim ()
+  "Scale the resource at point.
+
+Supports deployments, statefulsets, and replicasets. Prompts for the
+desired replica count with a sensible default from the resource spec."
+  (interactive)
+  (let* ((state (kubernetes-state))
+         (resource-info (kubernetes-utils-get-resource-info-at-point)))
+    (unless resource-info
+      (user-error "No scalable resource at point"))
+    (let* ((resource-type (car resource-info))
+           (resource-name (cdr resource-info))
+           (supported '("deployment" "statefulset" "replicaset")))
+      (unless (member resource-type supported)
+        (user-error "Resource %s is not scalable" resource-type))
+      (let* ((lookup-fn (intern (format "kubernetes-state-lookup-%s" resource-type)))
+             (resource (when (fboundp lookup-fn)
+                         (funcall lookup-fn resource-name state)))
+             (default (or (alist-get 'replicas (alist-get 'spec resource)) 1))
+             (replicas (read-number (format "Scale %s %s to replicas: " resource-type resource-name)
+                                    default))
+             (on-success (lambda (_)
+                           (pcase resource-type
+                             ("deployment" (kubernetes-deployments-refresh t))
+                             ("statefulset" (kubernetes-statefulsets-refresh t))
+                             ("replicaset" (kubernetes-replicasets-refresh t)))
+                           (kubernetes-pods-refresh t)
+                           (message "Scaled %s %s to %d" resource-type resource-name replicas)))
+             (on-error (lambda (err-buf)
+                         (let ((err (with-current-buffer err-buf (string-trim (buffer-string)))))
+                           (kubernetes--error "Scale failed: %s" err)
+                           (user-error "Failed to scale %s %s" resource-type resource-name)))))
+        (pcase resource-type
+          ("deployment"
+           (kubernetes-kubectl-scale-deployment state resource-name replicas on-success on-error))
+          ("statefulset"
+           (kubernetes-kubectl-scale-statefulset state resource-name replicas on-success on-error))
+          ("replicaset"
+           (kubernetes-kubectl-scale-replicaset state resource-name replicas on-success on-error)))))))
+

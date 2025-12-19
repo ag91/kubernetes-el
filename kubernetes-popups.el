@@ -62,6 +62,7 @@ If disabling the proxy, ARGS is ignored."
     ("l" "Logs" kubernetes-logs-reset-and-launch)
     ("P" "Proxy" kubernetes-proxy)
     ("R" "Restart deployment" kubernetes-deployments-rollout-restart)
+    ("s" "Scale" kubernetes-scale-dwim)
     ("T" "Events" kubernetes-events)
     ("v" "Switch overview view" kubernetes-overview-set-sections)]])
 

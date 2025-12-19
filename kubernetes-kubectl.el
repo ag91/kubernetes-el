@@ -453,3 +453,26 @@ STATE is the application state."
 (provide 'kubernetes-kubectl)
 
 ;;; kubernetes-kubectl.el ends here
+
+;; Additional scale helpers for other scalable resource types
+
+(defun kubernetes-kubectl-scale-statefulset (state name replicas cb &optional error-cb)
+  "Run `kubectl scale statefulset NAME --replicas=N' and call CB with output.
+
+STATE is the current application state.  REPLICAS is an integer."
+  (kubernetes-kubectl state
+                      (list "scale" "statefulset" name "--replicas" (number-to-string replicas))
+                      (lambda (buf)
+                        (funcall cb (with-current-buffer buf (buffer-string))))
+                      error-cb))
+
+(defun kubernetes-kubectl-scale-replicaset (state name replicas cb &optional error-cb)
+  "Run `kubectl scale replicaset NAME --replicas=N' and call CB with output.
+
+STATE is the current application state.  REPLICAS is an integer."
+  (kubernetes-kubectl state
+                      (list "scale" "replicaset" name "--replicas" (number-to-string replicas))
+                      (lambda (buf)
+                        (funcall cb (with-current-buffer buf (buffer-string))))
+                      error-cb))
+

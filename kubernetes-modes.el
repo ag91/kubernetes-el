@@ -64,6 +64,8 @@
     (define-key keymap (kbd "g") #'kubernetes-refresh)
     (define-key keymap (kbd "l") #'kubernetes-logs)
     (define-key keymap (kbd "L") #'kubernetes-labels)
+    (define-key keymap (kbd "s") #'kubernetes-scale-dwim)
+
     (define-key keymap (kbd "T") #'kubernetes-events)
     (define-key keymap (kbd "u") #'kubernetes-unmark)
     (define-key keymap (kbd "U") #'kubernetes-unmark-all)
