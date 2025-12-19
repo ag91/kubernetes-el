@@ -13,6 +13,7 @@
 (require 'kubernetes-exec)
 (require 'kubernetes-state)
 (require 'kubernetes-utils)
+(require 'kubernetes-namespaces)
 (require 'mode-local)
 
 (autoload 'kubernetes-configmaps-delete-marked "kubernetes-configmaps")
@@ -427,3 +428,27 @@ THING must be a valid target for `kubectl edit'."
 (provide 'kubernetes-commands)
 
 ;;; kubernetes-commands.el ends here
+
+;;;###autoload
+(defun kubernetes-create-namespace (name switch state)
+  "Create a Kubernetes namespace named NAME.
+
+With universal prefix argument SWITCH, also switch to the newly created
+namespace using `kubernetes-set-namespace'.
+
+STATE is the current application state."
+  (interactive (list (read-string "Create namespace: ") current-prefix-arg (kubernetes-state)))
+  (kubernetes-kubectl state
+                      (list "create" "namespace" name)
+                      (lambda (buf)
+                        (let ((output (with-current-buffer buf (s-trim (buffer-string)))))
+                          (kubernetes--info "Created namespace: %s" name)
+                          (kubernetes--message "%s" output)
+                          ;; Optionally switch to the new namespace
+                          (when switch
+                            (kubernetes-set-namespace name state))))
+                      (lambda (err-buf)
+                        (let ((err (with-current-buffer err-buf (s-trim (buffer-string)))))
+                          (kubernetes--error "Unable to create namespace '%s'" name)
+                          (kubernetes--message "%s" err)))))
+
