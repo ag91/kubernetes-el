@@ -3,6 +3,7 @@
 ;;; Code:
 
 (require 's)
+(require 'subr-x)
 (require 'transient)
 
 (require 'kubernetes-ast)
@@ -137,9 +138,17 @@ STATE is the current application state."
       (setq-local kubernetes-exec-namespace (kubernetes-state--get state 'current-namespace))
       (setq-local kubernetes-exec-container-name (kubernetes-utils--extract-container-name-from-args args)))
 
-    ;; Setup process cleanup if needed
-    (when (and interactive-tty kubernetes-clean-up-interactive-exec-buffers)
-      (set-process-sentinel (get-buffer-process buf) #'kubernetes-process-kill-quietly))
+    (let ((proc (get-buffer-process buf)))
+      (when (processp proc)
+        (set-process-sentinel
+         proc
+         (lambda (p event)
+           (ignore event)
+           (let ((code (process-exit-status p)))
+             (when (and (numberp code) (not (zerop code)))
+               (kubernetes--error "kubectl exec failed (exit %s)" code))
+             (when (and interactive-tty kubernetes-clean-up-interactive-exec-buffers (zerop code))
+               (kubernetes-process-kill-quietly p)))))))
 
     (select-window (display-buffer buf))))
 
@@ -156,13 +165,13 @@ STATE is the current application state."
                       (resource-type (car resource-info))
                       (resource-name (cdr resource-info))
                       (resource-path (if (string= resource-type "pod")
-                                        resource-name
-                                      (format "%s/%s" resource-type resource-name)))
+                                         resource-name
+                                       (format "%s/%s" resource-type resource-name)))
                       (command
                        (let ((cmd (string-trim (read-string
-                                               (format "Command (default: %s): "
-                                                      kubernetes-default-exec-command)
-                                               nil 'kubernetes-exec-history))))
+                                                (format "Command (default: %s): "
+                                                        kubernetes-default-exec-command)
+                                                nil 'kubernetes-exec-history))))
                          (if (string-empty-p cmd)
                              kubernetes-default-exec-command
                            cmd))))
@@ -185,21 +194,20 @@ STATE is the current application state."
 
     ;; Build command args
     (let* ((resource-path (if (string= resource-type "pod")
-                            resource-name
-                          (format "%s/%s" resource-type resource-name)))
+                              resource-name
+                            (format "%s/%s" resource-type resource-name)))
            (command-args (append (list "exec")
-                                (kubernetes-kubectl--flags-from-state state)
-                                args
-                                (when-let (ns (kubernetes-state--get state 'current-namespace))
-                                  (list (format "--namespace=%s" ns)))
-                                (list resource-path "--" exec-command)))
+                                 (kubernetes-kubectl--flags-from-state state)
+                                 args
+                                 (list resource-path "--" exec-command)))
            (buffer-name (kubernetes-utils-generate-operation-buffer-name
-                        "exec vterm" resource-type resource-name args state t)))
+                         "exec vterm" resource-type resource-name args state t)))
 
       ;; Start vterm with command
       (kubernetes-utils-vterm-start buffer-name
-                                   kubernetes-kubectl-executable
-                                   command-args))))
+                                    kubernetes-kubectl-executable
+                                    command-args))))
+
 
 ;; Wrapper functions for the transient interface to check resource validity
 (defun kubernetes-exec-into-with-check (args state)
@@ -216,13 +224,13 @@ ARGS and STATE are passed to the function."
          (resource-type (car resource-info))
          (resource-name (cdr resource-info))
          (resource-path (if (string= resource-type "pod")
-                          resource-name
-                        (format "%s/%s" resource-type resource-name)))
+                            resource-name
+                          (format "%s/%s" resource-type resource-name)))
          (command
           (let ((cmd (string-trim (read-string
-                                  (format "Command (default: %s): "
-                                         kubernetes-default-exec-command)
-                                  nil 'kubernetes-exec-history))))
+                                   (format "Command (default: %s): "
+                                           kubernetes-default-exec-command)
+                                   nil 'kubernetes-exec-history))))
             (if (string-empty-p cmd)
                 kubernetes-default-exec-command
               cmd))))
@@ -242,17 +250,18 @@ ARGS and STATE are passed to the function."
          (resource-type (car resource-info))
          (resource-name (cdr resource-info))
          (resource-path (if (string= resource-type "pod")
-                          resource-name
-                        (format "%s/%s" resource-type resource-name)))
+                            resource-name
+                          (format "%s/%s" resource-type resource-name)))
          (command
           (let ((cmd (string-trim (read-string
-                                  (format "Command (default: %s): "
-                                         kubernetes-default-exec-command)
-                                  nil 'kubernetes-exec-history))))
+                                   (format "Command (default: %s): "
+                                           kubernetes-default-exec-command)
+                                   nil 'kubernetes-exec-history))))
             (if (string-empty-p cmd)
                 kubernetes-default-exec-command
               cmd))))
     (kubernetes-exec-using-vterm resource-path args command state)))
+
 
 ;;;###autoload
 (defun kubernetes-exec-switch-buffers ()
@@ -270,12 +279,12 @@ ARGS and STATE are passed to the function."
       ;; Use completing-read with buffer category annotation for embark
       (let* ((buffer-names (mapcar 'buffer-name exec-buffers))
              (selected-name (completing-read
-                            "Select exec buffer: "
-                            (lambda (string pred action)
-                              (if (eq action 'metadata)
-                                  '(metadata (category . buffer))
-                                (complete-with-action
-                                 action buffer-names string pred))))))
+                             "Select exec buffer: "
+                             (lambda (string pred action)
+                               (if (eq action 'metadata)
+                                   '(metadata (category . buffer))
+                                 (complete-with-action
+                                  action buffer-names string pred))))))
         (when selected-name
           (switch-to-buffer (get-buffer selected-name)))))))
 
@@ -303,7 +312,7 @@ ARGS and STATE are passed to the function."
      kubernetes-exec-into-with-check)
     ("v" (lambda ()
            (if (and (kubernetes-utils-has-valid-resource-p kubernetes-exec-supported-resource-types)
-                   (require 'vterm nil 'noerror))
+                    (require 'vterm nil 'noerror))
                (format "Exec into %s using vterm" (kubernetes-utils-get-current-resource-description kubernetes-exec-supported-resource-types))
              (propertize "Exec using vterm (no resource selected)" 'face 'transient-inapt-suffix)))
      kubernetes-exec-vterm-with-check

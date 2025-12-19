@@ -137,7 +137,7 @@ balance interface stuttering with update frequency."
   :group 'kubernetes
   :type 'function)
 
-(defcustom kubernetes-default-exec-command "bash"
+(defcustom kubernetes-default-exec-command "sh"
   "The default command to use when exec'ing into a pod's container."
   :group 'kubernetes
   :type 'string)
